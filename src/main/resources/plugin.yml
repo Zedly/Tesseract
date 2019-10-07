@@ -1,0 +1,23 @@
+name: 'Tesseract'
+version: '${project.version}'
+description: 'Effectively infinite item storage, on signs.'
+author: 'Syndek'
+
+main: 'dev.syndek.tesseract.TesseractPlugin'
+depend: ['WorldGuard']
+api-version: '1.14'
+
+permissions:
+  tesseract.*:
+    description: 'Gives access to all features of Tesseract.'
+    children:
+      tesseract.use.*:
+        description: 'Allows full use of Tesseracts.'
+        children:
+          tesseract.use:
+            description: 'Allows the use of Tesseracts within WorldGuard regions the player can build in.'
+            default: true
+          tesseract.use.anywhere:
+            description: 'Allows the use of Tesseracts anywhere. Requires the tesseract.use node.'
+      tesseract.create:
+        description: 'Allows the creation of Tesseracts within WorldGuard regions the player can build in.'
