@@ -141,7 +141,7 @@ final class TesseractListener implements Listener {
     @EventHandler
     public void onDropperRedstone(BlockPhysicsEvent evt) {
         // Reject non-droppers
-        if (evt.getBlock().getType() != Material.DROPPER || evt.isCancelled()) {
+        if (evt.isCancelled() || evt.getBlock().getType() != Material.DROPPER) {
             return;
         }
         
