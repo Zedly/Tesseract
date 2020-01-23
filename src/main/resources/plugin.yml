@@ -1,11 +1,11 @@
 name: 'Tesseract'
 version: '${project.version}'
-description: 'Effectively infinite item storage, on signs.'
+description: 'Effectively infinite item storage on signs'
 author: 'Syndek'
 
 main: 'dev.syndek.tesseract.TesseractPlugin'
-depend: ['WorldGuard']
-api-version: '1.14'
+softdepend: ['WorldGuard']
+api-version: '1.15'
 
 permissions:
   tesseract.*:

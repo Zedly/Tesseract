@@ -6,6 +6,7 @@ import com.sk89q.worldguard.WorldGuard;
 import com.sk89q.worldguard.bukkit.WorldGuardPlugin;
 import com.sk89q.worldguard.protection.regions.RegionContainer;
 import java.util.HashMap;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -27,10 +28,19 @@ final class TesseractListener implements Listener {
 
     private static final BlockFace[] CARDINAL_FACES = {BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST};
     private static final TesseractListener INSTANCE = new TesseractListener();
-    private static final RegionContainer CONTAINER = WorldGuard.getInstance().getPlatform().getRegionContainer();
     private static final HashMap<Block, Integer> DROPPER_POWER_CACHE = new HashMap<>();
     private static final HashMap<Player, Long> DOUBLE_CLICK_TIMER = new HashMap<>();
     private static final long DOUBLE_CLICK_MAX_MILLIS = 500;
+    private static final RegionContainer CONTAINER;
+    private static final boolean worldguard = Bukkit.getPluginManager().getPlugin("WorldGuard") != null;
+
+    static {
+        if (worldguard) {
+            CONTAINER = WorldGuard.getInstance().getPlatform().getRegionContainer();
+        } else {
+            CONTAINER = null;
+        }
+    }
 
     private TesseractListener() {
     }
@@ -40,9 +50,12 @@ final class TesseractListener implements Listener {
     }
 
     /**
-     * A Tesseract can be created by anyone with the appropriate permission by placing a sign with the text "[Tesseract]" in the top line.
-     * The top line will turn blue and the other lines will initialize to represent an empty Tesseract.
-     * @param event 
+     * A Tesseract can be created by anyone with the appropriate permission by
+     * placing a sign with the text "[Tesseract]" in the top line. The top line
+     * will turn blue and the other lines will initialize to represent an empty
+     * Tesseract.
+     *
+     * @param event
      */
     @EventHandler
     public void onTesseractCreate(final SignChangeEvent event) {
@@ -51,7 +64,7 @@ final class TesseractListener implements Listener {
             return;
         }
         if (!event.getPlayer().hasPermission("tesseract.create")) {
-            event.getPlayer().sendMessage("§cYou do not have permission to create Tesseracts.");
+            event.getPlayer().sendMessage(ChatColor.RED + "You do not have permission to create Tesseracts.");
             event.setLine(0, ChatColor.DARK_RED + "[Tesseract]");
         } else {
             Sign sign = (Sign) event.getBlock().getState();
@@ -62,10 +75,14 @@ final class TesseractListener implements Listener {
     }
 
     /**
-     * Left clicking withdraws items from a Tesseract, right clicking deposits items.
-     * Sneaking causes the transaction to happen on a single-item basis, normally the max. stack size of the material is moved.
-     * If a player right clicks in intervals of 500ms or less (or holds down the right mouse button), each Tesseract will absorb all compatible items from the player's inventory.
-     * @param event 
+     * Left clicking withdraws items from a Tesseract, right clicking deposits
+     * items. Sneaking causes the transaction to happen on a single-item basis,
+     * normally the max. stack size of the material is moved. If a player right
+     * clicks in intervals of 500ms or less (or holds down the right mouse
+     * button), each Tesseract will absorb all compatible items from the
+     * player's inventory.
+     *
+     * @param event
      */
     @EventHandler
     public void onTesseractClick(final PlayerInteractEvent event) {
@@ -77,7 +94,7 @@ final class TesseractListener implements Listener {
         // Reject players lacking permission
         Player player = event.getPlayer();
         if (!canUseBlock(player, event.getClickedBlock())) {
-            player.sendMessage("§cYou do not have permission to use this Tesseract!");
+            player.sendMessage(ChatColor.RED + "You do not have permission to use this Tesseract!");
             event.setCancelled(true);
             return;
         }
@@ -113,8 +130,9 @@ final class TesseractListener implements Listener {
     }
 
     /**
-     * We want non-empty Tesseracts to be unbreakable. 
-     * This method cancels a BlockBreakEvent if it concerns a Tesseract which is not empty.
+     * We want non-empty Tesseracts to be unbreakable. This method cancels a
+     * BlockBreakEvent if it concerns a Tesseract which is not empty.
+     *
      * @param event
      */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -130,13 +148,16 @@ final class TesseractListener implements Listener {
         event.setCancelled(true);
     }
 
-    
     /**
-     * A dropper with Tesseracts attached dumps its contents into the Tesseracts on a positive redstone edge.
-     * Pulling this off is tricky because of unexplained overrides in the server code. 
-     * This approach catches an event which precedes the BlockDispenseEvent in order to avoid conflict with the server over the dropper's inventory contents.
-     * The primitive compare causes the method to return after approx. 200 nanoseconds, the power cache lookup returns after 2000ns. This is reasonably efficient.
-     * @param evt 
+     * A dropper with Tesseracts attached dumps its contents into the Tesseracts
+     * on a positive redstone edge. Pulling this off is tricky because of
+     * unexplained overrides in the server code. This approach catches an event
+     * which precedes the BlockDispenseEvent in order to avoid conflict with the
+     * server over the dropper's inventory contents. The primitive compare
+     * causes the method to return after approx. 200 nanoseconds, the power
+     * cache lookup returns after 2000ns. This is reasonably efficient.
+     *
+     * @param evt
      */
     @EventHandler
     public void onDropperRedstone(BlockPhysicsEvent evt) {
@@ -144,11 +165,11 @@ final class TesseractListener implements Listener {
         if (evt.isCancelled() || evt.getBlock().getType() != Material.DROPPER) {
             return;
         }
-        
+
         Block dropperBlock = evt.getBlock();
         int power = dropperBlock.getBlockPower();
         Integer oldPower = DROPPER_POWER_CACHE.put(dropperBlock, power);
-        
+
         // Accept only positive edges
         if (oldPower != null && oldPower == 0 && power > 0) {
             Dropper dropper = (Dropper) dropperBlock.getState();
@@ -166,13 +187,14 @@ final class TesseractListener implements Listener {
 
     }
 
-    
     /**
      * Determine a player's permission to use Tesseracts in a given location.
-     * Interacts with Worldguard to enforce protection of Tesseracts on claimed terrain. Additional protection plugins may be added upon request
+     * Interacts with Worldguard to enforce protection of Tesseracts on claimed
+     * terrain. Additional protection plugins may be added upon request
+     *
      * @param player
      * @param block
-     * @return 
+     * @return
      */
     private boolean canUseBlock(final Player player, Block block) {
         // If a player has the Tesseract anywhere permission, we can bypass all WorldGuard checks.
@@ -181,6 +203,10 @@ final class TesseractListener implements Listener {
             return false;
         }
         if (player.hasPermission("tesseract.use.anywhere")) {
+            return true;
+        }
+
+        if (!worldguard) {
             return true;
         }
 
