@@ -113,6 +113,10 @@ final class Tesseract {
         return changed;
     }
 
+    void depositAllAndUpdate(Tesseract other, Sign sign, boolean singleStack) {
+
+    }
+
     /**
      * Deposit only the item stack held in the user's hand. Only applicable to
      * inventories with a primary slot (Player inventories).
@@ -169,6 +173,35 @@ final class Tesseract {
         update(sign);
     }
 
+    void fillInventoryAndUpdate(Inventory inv, Sign sign, boolean singleStack) {
+        // Don't try to withdraw items if this Tesseract is empty, or there are no items being withdrawn.
+        if (isEmpty() || amount <= 0) {
+            return;
+        }
+        // Clamp withdrawal amount down to safe amount.
+        long dispenseAmount = Math.min(amount, getInventoryCapacity(inv, material));
+        if (singleStack) {
+            dispenseAmount = Math.min(dispenseAmount, material.getMaxStackSize());
+        }
+        addItemsToInventory(inv, material, dispenseAmount);
+        amount -= dispenseAmount;
+        update(sign);
+    }
+
+    /*
+    void fillKleinBottleAndUpdate(Sign sign, Tesseract tesseract, boolean singleStack) {
+        // Don't try to withdraw items if this Tesseract is empty, or there are no items being withdrawn.
+        if (isEmpty() || amount <= 0) {
+            return;
+        }
+        // Clamp withdrawal amount down to safe amount.
+        long dispenseAmount = singleItem ? 1 : Math.min(amount, material.getMaxStackSize());
+        amount -= dispenseAmount;
+        final Item item = sign.getWorld().dropItem(sign.getLocation().add(0.5, 0.5, 0.5), new ItemStack(material, (int) dispenseAmount));
+        item.setPickupDelay(0);
+        update(sign);
+    }
+     */
     public boolean isEmpty() {
         return amount == 0 || material == Material.AIR;
     }
@@ -229,6 +262,35 @@ final class Tesseract {
         }
     }
 
+    private static long getInventoryCapacity(Inventory inv, Material mat) {
+        long cap = 0;
+        for (int i = 0; i < inv.getSize(); i++) {
+            ItemStack is = inv.getItem(i);
+            if (is == null || is.getType() == Material.AIR) {
+                cap += mat.getMaxStackSize();
+            } else if (is.getType() == mat && !is.hasItemMeta()) {
+                cap += mat.getMaxStackSize() - is.getAmount();
+            }
+        }
+        return cap;
+    }
+
+    private static long addItemsToInventory(Inventory inv, Material mat, long amount) {
+        for (int i = 0; i < inv.getSize() && amount > 0; i++) {
+            long addAmount = 0;
+            ItemStack is = inv.getItem(i);
+            if (is == null || is.getType() == Material.AIR) {
+                addAmount = Math.min(amount, mat.getMaxStackSize());
+                inv.setItem(i, new ItemStack(mat, (int) addAmount));
+            } else if (is.getType() == mat && !is.hasItemMeta()) {
+                addAmount = Math.min(amount, mat.getMaxStackSize() - is.getAmount());
+                inv.setItem(i, new ItemStack(mat, is.getAmount() + (int) addAmount));
+            }
+            amount -= addAmount;
+        }
+        return amount;
+    }
+
     /**
      * Checks if the given Block is any of the materials representing a type of
      * sign in 1.14.4.
@@ -254,6 +316,31 @@ final class Tesseract {
             case OAK_WALL_SIGN:
             case SPRUCE_SIGN:
             case SPRUCE_WALL_SIGN:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    public static boolean isMaterialShulkerBox(final Material mat) {
+        switch (mat) {
+            case SHULKER_BOX:
+            case RED_SHULKER_BOX:
+            case PINK_SHULKER_BOX:
+            case ORANGE_SHULKER_BOX:
+            case YELLOW_SHULKER_BOX:
+            case LIME_SHULKER_BOX:
+            case GREEN_SHULKER_BOX:
+            case LIGHT_BLUE_SHULKER_BOX:
+            case CYAN_SHULKER_BOX:
+            case BLUE_SHULKER_BOX:
+            case PURPLE_SHULKER_BOX:
+            case MAGENTA_SHULKER_BOX:
+            case WHITE_SHULKER_BOX:
+            case BROWN_SHULKER_BOX:
+            case LIGHT_GRAY_SHULKER_BOX:
+            case GRAY_SHULKER_BOX:
+            case BLACK_SHULKER_BOX:
                 return true;
             default:
                 return false;
@@ -350,7 +437,7 @@ final class Tesseract {
         return (sign.getLine(0).equals(ChatColor.DARK_BLUE + "[Tesseract]")
                 && sign.getLine(1).equals("-")
                 && sign.getLine(3).matches("^\\d+$")
-                && (sign.getLine(1).equals("EMPTY") || Material.valueOf(sign.getLine(2)) != null));
+                && (sign.getLine(2).equals("EMPTY") || Material.valueOf(sign.getLine(2)) != null));
     }
 
     private static Tesseract ofV3(Sign sign) {
@@ -383,8 +470,7 @@ final class Tesseract {
     private static boolean isTesseractV2(Sign sign) {
         return (sign.getLine(0).equals(ChatColor.DARK_BLUE + "[Tess" + ChatColor.DARK_BLUE + "eract]")
                 && sign.getLine(2).matches("^(\\d+)x64\\+\\d{1,2}$")
-                && sign.getLine(3).matches("^[0-9A-Za-z+/]{15}$")
-                && Material.valueOf(sign.getLine(1)) != null);
+                && sign.getLine(3).matches("^[0-9A-Za-z\\+/]{15}$"));
     }
 
     private static Tesseract ofV2(Sign sign) {
@@ -414,9 +500,9 @@ final class Tesseract {
             Bit 15-0: Item damage value
      */
     private static boolean isTesseractV1(Sign sign) {
-        return (sign.getLine(0).equals(ChatColor.DARK_BLUE + "[Tess" + ChatColor.DARK_BLUE + "eract]")
+        return (sign.getLine(0).equals(ChatColor.DARK_BLUE + "[Tesseract]")
                 && sign.getLine(2).matches("^(\\d+)x64\\+\\d{1,2}$")
-                && sign.getLine(3).matches("^[0-9A-F]{15}$")
+                && sign.getLine(3).matches("^[0-9A-Fa-f]{15}$")
                 && Material.valueOf(sign.getLine(1)) != null);
     }
 
@@ -434,17 +520,17 @@ final class Tesseract {
         return new Tesseract(legacyItemId, legacyDamage, amount);
     }
 
-    
     /**
-     * Formats the number of items in a Tesseract in stacks+items.
-     * Respects the contained material's stack size. 
-     * Amounts of unstackable items are displayed as simple natural numbers.
+     * Formats the number of items in a Tesseract in stacks+items. Respects the
+     * contained material's stack size. Amounts of unstackable items are
+     * displayed as simple natural numbers.
+     *
      * @param amount
      * @param stackSize
-     * @return 
+     * @return
      */
     private static String encodeStackNotation(long amount, long stackSize) {
-        if(stackSize == 1) {
+        if (stackSize == 1) {
             return String.valueOf(amount);
         }
         return (amount / stackSize) + "x" + stackSize + "+" + (amount % stackSize);
@@ -452,8 +538,9 @@ final class Tesseract {
 
     /**
      * Reconstructs the true number of items from the stacks+items notation.
+     *
      * @param amount
-     * @return 
+     * @return
      */
     private static long parseStackNotation(String amount) {
         Matcher matcher = STACK_NOTATION_PATTERN.matcher(amount);
@@ -472,6 +559,7 @@ final class Tesseract {
 
     /**
      * Parses substrings of the Tesseract base64 encoding scheme.
+     *
      * @param s_source
      * @param start
      * @param end
@@ -487,15 +575,18 @@ final class Tesseract {
     }
 
     /**
-     * Converts the legacy item-ID/damage encoding to the modern Material encoding.
+     * Converts the legacy item-ID/damage encoding to the modern Material
+     * encoding.
+     *
      * @param legacyItemId
      * @param legacyDamage
-     * @return the corresponding material or null if the magic numbers cannot be parsed
+     * @return the corresponding material or null if the magic numbers cannot be
+     * parsed
      */
     @SuppressWarnings("deprecation")
     public static Material convertLegacyMaterial(long legacyItemId, long legacyDamage) {
         for (Material i : EnumSet.allOf(Material.class)) {
-            if (i.getId() == legacyItemId) {
+            if (i.isLegacy() && i.getId() == legacyItemId) {
                 return Bukkit.getUnsafe().fromLegacy(new MaterialData(i, (byte) legacyDamage));
             }
         }
@@ -503,8 +594,10 @@ final class Tesseract {
     }
 
     /**
-     * Produces a String containing the Tesseract's state for debugging purposes.
-     * @return 
+     * Produces a String containing the Tesseract's state for debugging
+     * purposes.
+     *
+     * @return
      */
     @Override
     public String toString() {

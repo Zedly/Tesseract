@@ -11,7 +11,10 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.Container;
 import org.bukkit.block.Dropper;
+import org.bukkit.block.Hopper;
+import org.bukkit.block.ShulkerBox;
 import org.bukkit.block.Sign;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -23,12 +26,14 @@ import org.bukkit.event.block.BlockPhysicsEvent;
 import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BlockStateMeta;
 
 final class TesseractListener implements Listener {
 
     private static final BlockFace[] CARDINAL_FACES = {BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST};
     private static final TesseractListener INSTANCE = new TesseractListener();
-    private static final HashMap<Block, Integer> DROPPER_POWER_CACHE = new HashMap<>();
+    private static final HashMap<Block, Integer> OPPER_POWER_CACHE = new HashMap<>();
     private static final HashMap<Player, Long> DOUBLE_CLICK_TIMER = new HashMap<>();
     private static final long DOUBLE_CLICK_MAX_MILLIS = 500;
     private static final RegionContainer CONTAINER;
@@ -108,7 +113,22 @@ final class TesseractListener implements Listener {
 
         // Decide mode of interaction and perform
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
-            if (player.isSneaking()) {
+            if (player.isSneaking() && Tesseract.isMaterialShulkerBox(player.getInventory().getItemInMainHand().getType())) {
+                ItemStack is = player.getInventory().getItemInMainHand();
+                if (is.hasItemMeta() && is.getItemMeta() instanceof BlockStateMeta) {
+                    BlockStateMeta blockStateMeta = (BlockStateMeta) is.getItemMeta();
+                    if (blockStateMeta != null && blockStateMeta.getBlockState() instanceof ShulkerBox) {
+                        ShulkerBox shulker = (ShulkerBox) blockStateMeta.getBlockState();
+                        Inventory shulkerInv = shulker.getInventory();
+                        tesseract.depositAllAndUpdate(shulkerInv, sign);
+                        blockStateMeta.setBlockState(shulker);
+                        is.setItemMeta(blockStateMeta);
+                        player.getInventory().setItemInMainHand(is);
+                        event.setCancelled(true);
+                        return;
+                    }
+                }
+            } else if (player.isSneaking()) {
                 tesseract.depositHeldItemAndUpdate(player.getInventory(), true, sign);
             } else if (isDoubleClick(player)) {
                 tesseract.depositAllAndUpdate(player.getInventory(), sign);
@@ -122,10 +142,30 @@ final class TesseractListener implements Listener {
             // This prevents strange instances in which a Tesseract can both drop items and break at the same time.
             // If the Tesseract IS empty, then don't cancel the event,
             // as cancelling a PlayerInteractEvent will also prevent a block from breaking.
-            if (!tesseract.isEmpty()) {
-                tesseract.dispenseAndUpdate(sign, player.isSneaking());
-                event.setCancelled(true);
+            if (tesseract.isEmpty()) {
+                return;
             }
+
+            // Sneak Left click a Tesseract with a Shulker Box to fill the Shulker with Tesseract contents
+            if (player.isSneaking() && Tesseract.isMaterialShulkerBox(player.getInventory().getItemInMainHand().getType())) {
+                ItemStack is = player.getInventory().getItemInMainHand();
+                if (is.hasItemMeta() && is.getItemMeta() instanceof BlockStateMeta) {
+                    BlockStateMeta blockStateMeta = (BlockStateMeta) is.getItemMeta();
+                    if (blockStateMeta != null && blockStateMeta.getBlockState() instanceof ShulkerBox) {
+                        ShulkerBox shulker = (ShulkerBox) blockStateMeta.getBlockState();
+                        Inventory shulkerInv = shulker.getInventory();
+                        tesseract.fillInventoryAndUpdate(shulkerInv, sign, false);
+                        blockStateMeta.setBlockState(shulker);
+                        is.setItemMeta(blockStateMeta);
+                        player.getInventory().setItemInMainHand(is);
+                        event.setCancelled(true);
+                        return;
+                    }
+                }
+            }
+
+            tesseract.dispenseAndUpdate(sign, player.isSneaking());
+            event.setCancelled(true);
         }
     }
 
@@ -157,34 +197,45 @@ final class TesseractListener implements Listener {
      * causes the method to return after approx. 200 nanoseconds, the power
      * cache lookup returns after 2000ns. This is reasonably efficient.
      *
+     * Update: Added Hopper functionality. Should still be fine
+     *
      * @param evt
      */
     @EventHandler
     public void onDropperRedstone(BlockPhysicsEvent evt) {
         // Reject non-droppers
-        if (evt.isCancelled() || evt.getBlock().getType() != Material.DROPPER) {
+        if (evt.isCancelled()) {
             return;
         }
 
-        Block dropperBlock = evt.getBlock();
-        int power = dropperBlock.getBlockPower();
-        Integer oldPower = DROPPER_POWER_CACHE.put(dropperBlock, power);
+        Material type = evt.getBlock().getType();
+        if (type != Material.DROPPER && type != Material.HOPPER) {
+            return;
+        }
+
+        Block opperBlock = evt.getBlock();
+        int power = opperBlock.getBlockPower();
+        Integer oldPower = OPPER_POWER_CACHE.put(opperBlock, power);
 
         // Accept only positive edges
         if (oldPower != null && oldPower == 0 && power > 0) {
-            Dropper dropper = (Dropper) dropperBlock.getState();
-            Inventory dropperSnapshotInv = dropper.getSnapshotInventory();
+
+            Container container = (Container) opperBlock.getState();
+            Inventory containerSnapshotInventory = container.getSnapshotInventory();
             // Make bulk deposit into each Tesseract
             for (BlockFace face : CARDINAL_FACES) {
-                if (Tesseract.isTesseract(dropperBlock.getRelative(face))) {
-                    Sign sign = (Sign) dropperBlock.getRelative(face).getState();
+                if (Tesseract.isTesseract(opperBlock.getRelative(face))) {
+                    Sign sign = (Sign) opperBlock.getRelative(face).getState();
                     Tesseract tesseract = Tesseract.of(sign);
-                    tesseract.depositAllAndUpdate(dropperSnapshotInv, sign);
-                    dropper.update(true, true);
+                    if (type == Material.DROPPER) {
+                        tesseract.depositAllAndUpdate(containerSnapshotInventory, sign);
+                    } else if (type == Material.HOPPER) {
+                        tesseract.fillInventoryAndUpdate(containerSnapshotInventory, sign, false);
+                    }
+                    container.update(true, true);
                 }
             }
         }
-
     }
 
     /**
